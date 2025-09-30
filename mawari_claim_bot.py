@@ -284,17 +284,20 @@ class MawariClaimBot:
         print("🚀 Запуск Mawari Claim Bot")
         print("=" * 50)
         
-        # Загружаем данные
-        if not self.load_credentials():
-            return False
+        # Загружаем данные только если они еще не загружены
+        if not self.wallets:
+            if not self.load_credentials():
+                return False
         
-        self.load_proxies()
+        if not self.proxies:
+            self.load_proxies()
         
-        # Если только один кошелек и есть прокси, спрашиваем
-        if len(self.wallets) == 1 and self.proxies:
+        # Если только один кошелек и есть прокси, спрашиваем (только в первый раз)
+        if len(self.wallets) == 1 and self.proxies and not hasattr(self, '_proxy_choice_made'):
             use_proxy = input("Использовать прокси? (y/n): ").lower().strip()
             if use_proxy != 'y':
                 self.proxies = []
+            self._proxy_choice_made = True
         
         # Инициализируем Web3
         if not self.init_web3():
@@ -319,8 +322,13 @@ class MawariClaimBot:
         print("⏰ Бот будет выполнять операции каждые 24 часа")
         print("=" * 60)
         
+        cycle_count = 0
+        
         while True:
             try:
+                cycle_count += 1
+                print(f"\n🔄 Цикл #{cycle_count}")
+                
                 # Очищаем результаты предыдущего цикла
                 self.results = {'successful': [], 'failed': []}
                 
@@ -336,8 +344,11 @@ class MawariClaimBot:
                 next_run = datetime.now() + timedelta(hours=24)
                 print(f"\n⏰ Следующее выполнение: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
                 
-                # Показываем обратный отсчет
-                self.show_countdown(24 * 3600)  # 24 часа в секундах
+                # Показываем обратный отсчет (для тестирования можно изменить на 60 секунд)
+                wait_seconds = 24 * 3600  # 24 часа в секундах
+                # Для тестирования раскомментируйте следующую строку:
+                # wait_seconds = 60  # 1 минута для тестирования
+                self.show_countdown(wait_seconds)
                 
             except KeyboardInterrupt:
                 print("\n\n⏹️ Бот остановлен пользователем")
@@ -351,9 +362,9 @@ class MawariClaimBot:
         """Показывает обратный отсчет до следующего выполнения"""
         while seconds > 0:
             hours, remainder = divmod(seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
+            minutes, secs = divmod(remainder, 60)
             
-            print(f"\r⏳ До следующего выполнения: {hours:02d}:{minutes:02d}:{seconds:02d}", end="", flush=True)
+            print(f"\r⏳ До следующего выполнения: {hours:02d}:{minutes:02d}:{secs:02d}", end="", flush=True)
             time.sleep(1)
             seconds -= 1
         
