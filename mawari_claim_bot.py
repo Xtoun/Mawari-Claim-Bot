@@ -379,6 +379,11 @@ class MawariClaimBot:
         print("🔍 Проверка балансов Burner кошельков...")
         print("=" * 60)
         
+        # Загружаем кошельки только если они еще не загружены
+        if not self.wallets:
+            if not self.load_credentials():
+                return
+        
         if not self.web3:
             if not self.init_web3():
                 return
@@ -545,11 +550,6 @@ def main():
                 
             elif choice == "3":
                 print("\n💰 Проверка балансов...")
-                # Загружаем данные для проверки балансов
-                if not bot.load_credentials():
-                    input("\nНажмите Enter для возврата в меню...")
-                    continue
-                
                 bot.check_burner_balances()
                 input("\nНажмите Enter для возврата в меню...")
                 
