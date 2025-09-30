@@ -194,8 +194,9 @@ class MawariClaimBot:
             # Получаем nonce
             nonce = self.web3.eth.get_transaction_count(wallet['wallet_address'])
             
-            # Получаем текущий gas price
+            # Получаем текущий gas price и увеличиваем его на 20% для надежности
             gas_price = self.web3.eth.gas_price
+            gas_price = int(gas_price * 1.2)  # Увеличиваем на 20%
             
             # Создаем транзакцию для отправки 1 MAWARI (1 * 10^18 wei)
             amount = self.web3.to_wei(1, 'ether')
@@ -278,14 +279,14 @@ class MawariClaimBot:
         
         progress_bar.update(1)
     
-    def run(self):
-        """Основной метод запуска бота"""
+    def run_single_cycle(self):
+        """Выполняет один цикл обработки кошельков"""
         print("🚀 Запуск Mawari Claim Bot")
         print("=" * 50)
         
         # Загружаем данные
         if not self.load_credentials():
-            return
+            return False
         
         self.load_proxies()
         
@@ -297,7 +298,7 @@ class MawariClaimBot:
         
         # Инициализируем Web3
         if not self.init_web3():
-            return
+            return False
         
         print(f"\n📊 Обработка {len(self.wallets)} кошельков...")
         print("=" * 50)
@@ -310,6 +311,57 @@ class MawariClaimBot:
         
         # Показываем результаты
         self.show_results()
+        return True
+    
+    def run_continuous(self):
+        """Запускает бота в режиме непрерывной работы"""
+        print("🔄 Запуск в режиме непрерывной работы")
+        print("⏰ Бот будет выполнять операции каждые 24 часа")
+        print("=" * 60)
+        
+        while True:
+            try:
+                # Очищаем результаты предыдущего цикла
+                self.results = {'successful': [], 'failed': []}
+                
+                # Выполняем один цикл
+                success = self.run_single_cycle()
+                
+                if not success:
+                    print("❌ Ошибка при выполнении цикла, повтор через 1 час...")
+                    time.sleep(3600)  # 1 час
+                    continue
+                
+                # Вычисляем время до следующего выполнения
+                next_run = datetime.now() + timedelta(hours=24)
+                print(f"\n⏰ Следующее выполнение: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+                
+                # Показываем обратный отсчет
+                self.show_countdown(24 * 3600)  # 24 часа в секундах
+                
+            except KeyboardInterrupt:
+                print("\n\n⏹️ Бот остановлен пользователем")
+                break
+            except Exception as e:
+                print(f"\n❌ Критическая ошибка: {e}")
+                print("🔄 Повтор через 1 час...")
+                time.sleep(3600)
+    
+    def show_countdown(self, seconds):
+        """Показывает обратный отсчет до следующего выполнения"""
+        while seconds > 0:
+            hours, remainder = divmod(seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            
+            print(f"\r⏳ До следующего выполнения: {hours:02d}:{minutes:02d}:{seconds:02d}", end="", flush=True)
+            time.sleep(1)
+            seconds -= 1
+        
+        print("\n🔄 Начинаем новый цикл...")
+    
+    def run(self):
+        """Основной метод запуска бота"""
+        return self.run_single_cycle()
     
     def check_burner_balances(self):
         """Проверяет балансы MAWARI токенов на Burner кошельках"""
@@ -361,6 +413,43 @@ class MawariClaimBot:
         print(f"🔗 Explorer: https://{self.explorer}")
         print("=" * 80)
     
+    def save_results_to_file(self):
+        """Сохраняет результаты в файл result.txt"""
+        try:
+            with open('result.txt', 'w', encoding='utf-8') as f:
+                f.write("=" * 80 + "\n")
+                f.write("📋 РЕЗУЛЬТАТЫ ВЫПОЛНЕНИЯ\n")
+                f.write("=" * 80 + "\n")
+                f.write(f"Время выполнения: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                
+                # Успешные кошельки
+                if self.results['successful']:
+                    f.write(f"✅ УСПЕШНО ОБРАБОТАНО ({len(self.results['successful'])}):\n")
+                    for result in self.results['successful']:
+                        f.write(f"Wallet: {result['wallet']}\n")
+                        f.write(f"Burner: {result['burner']}\n")
+                        f.write(f"Faucet TX: {result['faucet_tx']}\n")
+                        f.write(f"Send TX: {result['send_tx']}\n")
+                        f.write(f"Explorer: https://{self.explorer}/tx/{result['send_tx']}\n")
+                        f.write("-" * 50 + "\n")
+                
+                # Неудачные кошельки
+                if self.results['failed']:
+                    f.write(f"\n❌ НЕ ОБРАБОТАНО ({len(self.results['failed'])}):\n")
+                    for result in self.results['failed']:
+                        f.write(f"Wallet: {result['wallet']}\n")
+                        f.write(f"Burner: {result['burner']}\n")
+                        f.write(f"Faucet TX: {result.get('faucet_tx', 'N/A')}\n")
+                        f.write(f"Error: {result['error']}\n")
+                        f.write("-" * 50 + "\n")
+                
+                f.write(f"\n📊 Итого: {len(self.results['successful'])} успешно, {len(self.results['failed'])} неудачно\n")
+                f.write("=" * 80 + "\n")
+            
+            print("💾 Результаты сохранены в result.txt")
+        except Exception as e:
+            print(f"❌ Ошибка сохранения результатов: {e}")
+    
     def show_results(self):
         """Показывает таблицу результатов"""
         print("\n" + "=" * 80)
@@ -375,13 +464,20 @@ class MawariClaimBot:
                 successful_data.append([
                     result['wallet'][:20] + "...",
                     result['burner'][:20] + "...",
-                    result['faucet_tx'][:20] + "...",
-                    result['send_tx'][:20] + "..."
+                    "Open Explorer",
+                    "Open Explorer"
                 ])
             
             print(tabulate(successful_data, 
                           headers=["Wallet", "Burner", "Faucet TX", "Send TX"],
                           tablefmt="grid"))
+            
+            # Показываем ссылки на explorer
+            print("\n🔗 Ссылки на Explorer:")
+            for result in self.results['successful']:
+                print(f"Faucet: https://{self.explorer}/tx/{result['faucet_tx']}")
+                print(f"Send:   https://{self.explorer}/tx/{result['send_tx']}")
+                print()
         
         # Неудачные кошельки
         if self.results['failed']:
@@ -391,7 +487,7 @@ class MawariClaimBot:
                 failed_data.append([
                     result['wallet'][:20] + "...",
                     result['burner'][:20] + "...",
-                    result.get('faucet_tx', 'N/A')[:20] + "..." if result.get('faucet_tx') else 'N/A',
+                    "Open Explorer" if result.get('faucet_tx') else 'N/A',
                     result['error'][:30] + "..." if len(result['error']) > 30 else result['error']
                 ])
             
@@ -401,15 +497,19 @@ class MawariClaimBot:
         
         print(f"\n📊 Итого: {len(self.results['successful'])} успешно, {len(self.results['failed'])} неудачно")
         print("=" * 80)
+        
+        # Сохраняем результаты в файл
+        self.save_results_to_file()
 
 def show_menu():
     """Показывает главное меню"""
     print("\n" + "=" * 50)
     print("🤖 MAWARI CLAIM BOT")
     print("=" * 50)
-    print("1) 🚀 Запустить бота")
-    print("2) 💰 Проверить балансы Burner кошельков")
-    print("3) ❌ Выход")
+    print("1) 🚀 Запустить бота (один раз)")
+    print("2) 🔄 Запустить бота (непрерывно каждые 24ч)")
+    print("3) 💰 Проверить балансы Burner кошельков")
+    print("4) ❌ Выход")
     print("=" * 50)
 
 def main():
@@ -419,14 +519,20 @@ def main():
     while True:
         try:
             show_menu()
-            choice = input("\nВыберите опцию (1-3): ").strip()
+            choice = input("\nВыберите опцию (1-4): ").strip()
             
             if choice == "1":
-                print("\n🚀 Запуск бота...")
+                print("\n🚀 Запуск бота (один раз)...")
                 bot.run()
                 input("\nНажмите Enter для возврата в меню...")
                 
             elif choice == "2":
+                print("\n🔄 Запуск бота в режиме непрерывной работы...")
+                print("⚠️ Для остановки нажмите Ctrl+C")
+                input("Нажмите Enter для продолжения...")
+                bot.run_continuous()
+                
+            elif choice == "3":
                 print("\n💰 Проверка балансов...")
                 # Загружаем данные для проверки балансов
                 if not bot.load_credentials():
@@ -436,7 +542,7 @@ def main():
                 bot.check_burner_balances()
                 input("\nНажмите Enter для возврата в меню...")
                 
-            elif choice == "3":
+            elif choice == "4":
                 print("\n👋 До свидания!")
                 break
                 
