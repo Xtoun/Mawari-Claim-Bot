@@ -46,8 +46,8 @@ Thumbs.db
 logs/
 
 # Credentials (for security)
-# creds.txt
-# proxies.txt
+creds.txt
+proxies.txt
 
 # Temporary files
 *.tmp
