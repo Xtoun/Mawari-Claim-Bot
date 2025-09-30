@@ -39,7 +39,6 @@ git clone https://github.com/Xtoun/Mawari-Claim-Bot.git
 cd Mawari-Claim-Bot
 ```
 
-> 📝 **Примечание:** После клонирования вам нужно будет создать файлы `creds.txt` и `proxies.txt` для настройки бота.
 
 ### Windows
 

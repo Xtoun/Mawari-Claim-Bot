@@ -1,0 +1,7 @@
+# Формат: evm_private_key:burner_wallet_address
+# Пример:
+# 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef:0x16A4f86020F583Fb92383712f883aB9Ec82da538
+# 0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890:0x742d35Cc6634C0532925a3b8D4B9db96C4b4d1b6
+
+# Добавьте ваши приватные ключи и burner адреса здесь
+# Каждый кошелек на новой строке
