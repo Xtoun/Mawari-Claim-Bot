@@ -176,9 +176,11 @@ evm_private_key:burner_wallet_address
 
 Отредактируйте файл `proxies.txt` (опционально):
 ```
+# Поддерживаемые форматы:
 http://127.0.0.1:8080
 192.168.1.100:3128
 http://user:pass@proxy.example.com:8080
+82.22.69.217:7424:username:password
 ```
 
 ## Использование
@@ -187,23 +189,3 @@ http://user:pass@proxy.example.com:8080
 ```bash
 python mawari_claim_bot.py
 ```
-
-## Устранение проблем
-
-### Ошибка "No module named 'pkg_resources'"
-
-Если вы получили эту ошибку, выполните:
-
-```bash
-# Установите setuptools
-pip install setuptools
-
-# Или переустановите все зависимости
-pip install -r requirements.txt --upgrade
-```
-
-### Другие возможные проблемы
-
-- **"python не найден"** - используйте `python3` вместо `python`
-- **Ошибки с прокси** - проверьте формат в `proxies.txt`
-- **Ошибки подключения** - убедитесь в доступности RPC

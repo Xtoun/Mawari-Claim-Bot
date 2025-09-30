@@ -81,11 +81,25 @@ class MawariClaimBot:
             for line in lines:
                 line = line.strip()
                 if line and not line.startswith('#'):
-                    # Поддерживаем разные форматы прокси
+                    # Обрабатываем разные форматы прокси
                     if '://' in line:
+                        # Уже полный URL
                         self.proxies.append(line)
+                    elif ':' in line:
+                        # Формат ip:port:username:password
+                        parts = line.split(':')
+                        if len(parts) >= 2:
+                            if len(parts) == 2:
+                                # ip:port
+                                self.proxies.append(f"http://{parts[0]}:{parts[1]}")
+                            elif len(parts) == 4:
+                                # ip:port:username:password
+                                self.proxies.append(f"http://{parts[2]}:{parts[3]}@{parts[0]}:{parts[1]}")
+                            else:
+                                # Пропускаем неправильный формат
+                                print(f"⚠️ Пропущен неправильный формат прокси: {line}")
                     else:
-                        # Если формат ip:port, добавляем http://
+                        # Просто IP или домен
                         self.proxies.append(f"http://{line}")
             
             if self.proxies:
