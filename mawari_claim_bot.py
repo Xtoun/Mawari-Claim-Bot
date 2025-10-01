@@ -16,6 +16,7 @@ import sys
 import os
 from datetime import datetime, timedelta
 import threading
+from twocaptcha import TwoCaptcha
 
 class MawariClaimBot:
     def __init__(self):
@@ -24,10 +25,14 @@ class MawariClaimBot:
         self.chain_id = 576
         self.symbol = "MAWARI"
         self.explorer = "explorer.testnet.mawari.net"
+        self.site_url = "https://hub.testnet.mawari.net"
+        self.sitekey = "0x4AAAAAAASRorjU_k9HAdVc"  # Turnstile sitekey
         
         self.wallets = []
         self.proxies = []
         self.web3 = None
+        self.captcha_api_key = None
+        self.captcha_solver = None
         self.results = {
             'successful': [],
             'failed': []
@@ -113,6 +118,56 @@ class MawariClaimBot:
             print("⚠️ Файл proxies.txt не найден")
             return True  # Прокси не обязательны
     
+    def load_captcha_config(self):
+        """Загружает API ключ 2captcha из config.txt"""
+        try:
+            with open('config.txt', 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        if '=' in line:
+                            key, value = line.split('=', 1)
+                            if key.strip().lower() == '2captcha_api_key':
+                                self.captcha_api_key = value.strip()
+                                break
+            
+            if not self.captcha_api_key:
+                print("❌ API ключ 2captcha не найден в config.txt")
+                print("💡 Добавьте строку: 2CAPTCHA_API_KEY=ваш_api_ключ")
+                return False
+            
+            # Инициализируем 2captcha solver
+            self.captcha_solver = TwoCaptcha(self.captcha_api_key)
+            print("✅ 2captcha API ключ загружен")
+            return True
+            
+        except FileNotFoundError:
+            print("❌ Файл config.txt не найден")
+            print("💡 Создайте файл config.txt с API ключом 2captcha")
+            print("💡 Формат: 2CAPTCHA_API_KEY=ваш_api_ключ")
+            return False
+        except Exception as e:
+            print(f"❌ Ошибка при загрузке config.txt: {e}")
+            return False
+    
+    def solve_turnstile_captcha(self):
+        """Решает Turnstile капчу через 2captcha"""
+        try:
+            print("🔄 Решаем Turnstile капчу через 2captcha...")
+            
+            result = self.captcha_solver.turnstile(
+                sitekey=self.sitekey,
+                url=self.site_url
+            )
+            
+            token = result['code']
+            print(f"✅ Капча решена: {token[:50]}...")
+            return {'success': True, 'token': token}
+            
+        except Exception as e:
+            print(f"❌ Ошибка решения капчи: {e}")
+            return {'success': False, 'error': str(e)}
+    
     def init_web3(self):
         """Инициализирует Web3 соединение"""
         try:
@@ -134,9 +189,28 @@ class MawariClaimBot:
         return random.choice(self.proxies)
     
     def make_faucet_request(self, wallet_address, proxy=None):
-        """Отправляет запрос к крану"""
+        """Отправляет запрос к крану с решением Turnstile капчи"""
+        
+        # Решаем капчу
+        captcha_result = self.solve_turnstile_captcha()
+        if not captcha_result['success']:
+            return {'success': False, 'error': f"Captcha failed: {captcha_result['error']}"}
+        
+        turnstile_token = captcha_result['token']
+        
         headers = {
-            "Content-Type": "application/json"
+            'accept': '*/*',
+            'accept-language': 'en-US,en;q=0.9',
+            'content-type': 'application/json',
+            'origin': 'https://hub.testnet.mawari.net',
+            'referer': 'https://hub.testnet.mawari.net/',
+            'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
         }
         
         data = {
@@ -144,7 +218,13 @@ class MawariClaimBot:
                 "json": {
                     "rollupSubdomain": "mawari-testnet",
                     "recipientAddress": wallet_address,
-                    "turnstileToken": ""
+                    "turnstileToken": turnstile_token,
+                    "tokenRollupAddress": None
+                },
+                "meta": {
+                    "values": {
+                        "tokenRollupAddress": ["undefined"]
+                    }
                 }
             }
         }
@@ -162,7 +242,7 @@ class MawariClaimBot:
                 headers=headers,
                 json=data,
                 proxies=proxies_dict,
-                timeout=30
+                timeout=60
             )
             
             if response.status_code == 200:
@@ -177,7 +257,7 @@ class MawariClaimBot:
                         error_msg = result[0]['error']['json']['message']
                         return {'success': False, 'error': error_msg}
             
-            return {'success': False, 'error': f'HTTP {response.status_code}'}
+            return {'success': False, 'error': f'HTTP {response.status_code}: {response.text[:100]}'}
             
         except requests.exceptions.ProxyError:
             return {'success': False, 'error': 'Proxy error'}
@@ -283,6 +363,11 @@ class MawariClaimBot:
         """Выполняет один цикл обработки кошельков"""
         print("🚀 Запуск Mawari Claim Bot")
         print("=" * 50)
+        
+        # Загружаем API ключ 2captcha
+        if not self.captcha_api_key:
+            if not self.load_captcha_config():
+                return False
         
         # Загружаем данные только если они еще не загружены
         if not self.wallets:
@@ -401,25 +486,25 @@ class MawariClaimBot:
                 total_balance += float(balance_mawari)
                 
                 balance_data.append([
-                    burner_address[:20] + "...",
+                    burner_address,
                     f"{balance_mawari:.6f}",
                     f"{balance_mawari:.2f}"
                 ])
                 
-                print(f"💰 {burner_address[:20]}... - {balance_mawari:.6f} MAWARI")
+                print(f"💰 {burner_address} - {balance_mawari:.6f} MAWARI")
                 
             except Exception as e:
                 balance_data.append([
-                    burner_address[:20] + "...",
+                    burner_address,
                     "ERROR",
                     "ERROR"
                 ])
-                print(f"❌ {burner_address[:20]}... - Ошибка: {e}")
+                print(f"❌ {burner_address} - Ошибка: {e}")
         
         # Показываем таблицу
-        print("\n" + "=" * 80)
+        print("\n" + "=" * 100)
         print("📊 БАЛАНСЫ BURNER КОШЕЛЬКОВ")
-        print("=" * 80)
+        print("=" * 100)
         
         print(tabulate(balance_data, 
                       headers=["Burner Address", "Balance (MAWARI)", "Balance (rounded)"],
@@ -427,7 +512,7 @@ class MawariClaimBot:
         
         print(f"\n💎 Общий баланс: {total_balance:.6f} MAWARI")
         print(f"🔗 Explorer: https://{self.explorer}")
-        print("=" * 80)
+        print("=" * 100)
     
     def save_results_to_file(self):
         """Сохраняет результаты в файл result.txt"""
@@ -477,11 +562,15 @@ class MawariClaimBot:
             print(f"\n✅ УСПЕШНО ОБРАБОТАНО ({len(self.results['successful'])}):")
             successful_data = []
             for result in self.results['successful']:
+                # Сокращаем TX хэши для читабельности
+                faucet_tx_short = result['faucet_tx'][:10] + "..." + result['faucet_tx'][-8:]
+                send_tx_short = result['send_tx'][:10] + "..." + result['send_tx'][-8:]
+                
                 successful_data.append([
-                    result['wallet'][:20] + "...",
-                    result['burner'][:20] + "...",
-                    "Open Explorer",
-                    "Open Explorer"
+                    result['wallet'],
+                    result['burner'],
+                    faucet_tx_short,
+                    send_tx_short
                 ])
             
             print(tabulate(successful_data, 
@@ -490,26 +579,45 @@ class MawariClaimBot:
             
             # Показываем ссылки на explorer
             print("\n🔗 Ссылки на Explorer:")
-            for result in self.results['successful']:
-                print(f"Faucet: https://{self.explorer}/tx/{result['faucet_tx']}")
-                print(f"Send:   https://{self.explorer}/tx/{result['send_tx']}")
-                print()
+            for i, result in enumerate(self.results['successful'], 1):
+                print(f"\n#{i} Wallet: {result['wallet']}")
+                print(f"   Burner: {result['burner']}")
+                print(f"   Faucet TX: https://{self.explorer}/tx/{result['faucet_tx']}")
+                print(f"   Send TX:   https://{self.explorer}/tx/{result['send_tx']}")
         
         # Неудачные кошельки
         if self.results['failed']:
             print(f"\n❌ НЕ ОБРАБОТАНО ({len(self.results['failed'])}):")
             failed_data = []
             for result in self.results['failed']:
+                # Если есть faucet_tx, сокращаем его
+                if result.get('faucet_tx'):
+                    faucet_tx_short = result['faucet_tx'][:10] + "..." + result['faucet_tx'][-8:]
+                else:
+                    faucet_tx_short = 'N/A'
+                
+                # Сокращаем ошибку для читабельности таблицы
+                error_msg = result['error'][:40] + "..." if len(result['error']) > 40 else result['error']
+                
                 failed_data.append([
-                    result['wallet'][:20] + "...",
-                    result['burner'][:20] + "...",
-                    "Open Explorer" if result.get('faucet_tx') else 'N/A',
-                    result['error'][:30] + "..." if len(result['error']) > 30 else result['error']
+                    result['wallet'],
+                    result['burner'],
+                    faucet_tx_short,
+                    error_msg
                 ])
             
             print(tabulate(failed_data, 
                           headers=["Wallet", "Burner", "Faucet TX", "Error"],
                           tablefmt="grid"))
+            
+            # Показываем полные ошибки и ссылки
+            print("\n🔗 Подробности:")
+            for i, result in enumerate(self.results['failed'], 1):
+                print(f"\n#{i} Wallet: {result['wallet']}")
+                print(f"   Burner: {result['burner']}")
+                if result.get('faucet_tx'):
+                    print(f"   Faucet TX: https://{self.explorer}/tx/{result['faucet_tx']}")
+                print(f"   Error: {result['error']}")
         
         print(f"\n📊 Итого: {len(self.results['successful'])} успешно, {len(self.results['failed'])} неудачно")
         print("=" * 80)
